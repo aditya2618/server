@@ -1,0 +1,9 @@
+Django==5.2.9
+paho-mqtt
+celery
+redis
+django-celery-beat
+djangorestframework
+channels
+channels-redis
+daphne
