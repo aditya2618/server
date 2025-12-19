@@ -53,7 +53,7 @@ def handle_state_message(topic, payload):
     try:
         # Auto-create device if it doesn't exist
         device, device_created = Device.objects.get_or_create(
-            home_id=home_id,
+            home_identifier=home_id,  # Use string directly
             node_name=node_name,
             defaults={"name": node_name}
         )
@@ -108,9 +108,21 @@ def handle_state_message(topic, payload):
         from asgiref.sync import async_to_sync
         from channels.layers import get_channel_layer
 
+        # Get home_id for WebSocket group
+        if device.home:
+            home_id = device.home.id
+        else:
+            # Try to get home from HomeMember or parse home_identifier
+            try:
+                home_id = int(device.home_identifier)
+            except (ValueError, TypeError):
+                # If home_identifier is not numeric, skip WebSocket broadcast
+                print(f"⚠️ Cannot broadcast: device has no home and home_identifier is not numeric")
+                return
+
         channel_layer = get_channel_layer()
         async_to_sync(channel_layer.group_send)(
-            f"home_{device.home_id}",
+            f"home_{home_id}",
             {
                 "type": "send_state_update",
                 "data": {
@@ -147,8 +159,9 @@ def handle_status_message(topic, payload):
     node_name = parts[2]
 
     try:
+        # Query device using home_identifier directly
         device = Device.objects.get(
-            home_id=home_id,
+            home_identifier=home_id,  # Use string directly
             node_name=node_name
         )
 
@@ -166,9 +179,21 @@ def handle_status_message(topic, payload):
         from asgiref.sync import async_to_sync
         from channels.layers import get_channel_layer
 
+        # Get home_id for WebSocket group
+        if device.home:
+            home_id = device.home.id
+        else:
+            # Try to parse home_identifier as integer
+            try:
+                home_id = int(device.home_identifier)
+            except (ValueError, TypeError):
+                # If home_identifier is not numeric, skip WebSocket broadcast
+                print(f"⚠️ Cannot broadcast: device has no home and home_identifier is not numeric")
+                return
+
         channel_layer = get_channel_layer()
         async_to_sync(channel_layer.group_send)(
-            f"home_{device.home_id}",
+            f"home_{home_id}",
             {
                 "type": "send_state_update",
                 "data": {
@@ -180,5 +205,5 @@ def handle_status_message(topic, payload):
         )
 
     except Device.DoesNotExist:
-        print(f"Device not found for status update: {node_name}")
+        print(f"✗ Device not found for status update: {node_name} (home={home_id})")
 

@@ -48,14 +48,22 @@ class Location(models.Model):
 
 # 3. Device (ESP32 Node)
 class Device(models.Model):
-    home = models.ForeignKey(Home, on_delete=models.CASCADE, related_name="devices")
+    home = models.ForeignKey(
+        Home, on_delete=models.CASCADE, related_name="devices",
+        null=True, blank=True,
+        help_text="Optional link to Home object for backward compatibility"
+    )
+    home_identifier = models.CharField(
+        max_length=100,
+        help_text="String identifier for the home (e.g., 'home_test_1', '1')"
+    )
     location = models.ForeignKey(
         Location, on_delete=models.SET_NULL, null=True, blank=True
     )
 
     name = models.CharField(max_length=100)
     node_name = models.CharField(
-        max_length=100, unique=True,
+        max_length=100,
         help_text="Must match ESPHome node name"
     )
 
@@ -71,8 +79,11 @@ class Device(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        unique_together = [('home_identifier', 'node_name')]
+
     def base_topic(self):
-        return f"home/{self.home.id}/{self.node_name}"
+        return f"home/{self.home_identifier}/{self.node_name}"
 
     def __str__(self):
         return self.name
@@ -127,7 +138,7 @@ class Entity(models.Model):
 
     def state_topic(self):
         return (
-            f"home/{self.device.home.id}/"
+            f"home/{self.device.home_identifier}/"
             f"{self.device.node_name}/"
             f"{self.entity_type}/"
             f"{self.name}/state"
@@ -135,7 +146,7 @@ class Entity(models.Model):
 
     def command_topic(self):
         return (
-            f"home/{self.device.home.id}/"
+            f"home/{self.device.home_identifier}/"
             f"{self.device.node_name}/"
             f"{self.entity_type}/"
             f"{self.name}/command"

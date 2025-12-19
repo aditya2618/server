@@ -1,6 +1,5 @@
 from celery import shared_task
 from core.models import Automation, AutomationTrigger, AutomationAction
-from core.services.device_control import control_entity
 
 
 @shared_task
@@ -127,3 +126,33 @@ def run_schedule(schedule_id):
         print(f"  → Enabling automation: {schedule.automation.name}")
         schedule.automation.enabled = True
         schedule.automation.save(update_fields=["enabled"])
+
+
+@shared_task
+def cleanup_old_history(days=30):
+    """
+    Clean up old entity state history records.
+    
+    This task should be scheduled to run daily via django-celery-beat
+    to prevent the EntityStateHistory table from growing indefinitely.
+    
+    Args:
+        days: Delete records older than this many days (default: 30)
+    
+    Returns:
+        str: Summary of deletion
+    """
+    from django.utils.timezone import now
+    from datetime import timedelta
+    from core.models import EntityStateHistory
+    
+    cutoff_date = now() - timedelta(days=days)
+    
+    # Delete old records
+    deleted_count, _ = EntityStateHistory.objects.filter(
+        timestamp__lt=cutoff_date
+    ).delete()
+    
+    print(f"🗑️ Cleaned up {deleted_count} history records older than {days} days")
+    
+    return f"Deleted {deleted_count} old history records"

@@ -261,6 +261,54 @@ server/
 
 ---
 
+## 🗑️ Data Management - History Cleanup
+
+### Problem
+The `EntityStateHistory` table stores every state change and can grow rapidly with frequent sensor updates.
+
+### Solution: Automatic Cleanup
+
+#### Manual Cleanup
+Delete old history records manually:
+```powershell
+# Delete records older than 30 days
+python manage.py cleanup_history
+
+# Delete records older than 7 days
+python manage.py cleanup_history --days 7
+
+# Preview what would be deleted (dry run)
+python manage.py cleanup_history --days 30 --dry-run
+```
+
+#### Automated Cleanup with Celery
+
+**Step 1: Verify Task Exists**
+The `cleanup_old_history` task is already defined in `core/tasks.py`.
+
+**Step 2: Schedule in Django Admin**
+1. Go to http://localhost:8000/admin
+2. Navigate to **Periodic Tasks** → **Add Periodic Task**
+3. Configure:
+   - **Name:** `Daily History Cleanup`
+   - **Task (registered):** `core.tasks.cleanup_old_history`
+   - **Interval Schedule:** Create new interval: Every 1 day
+   - **Arguments:** `[30]` (keeps last 30 days)
+   - **Enabled:** ✓
+
+**Step 3: Verify**
+Check Celery logs to see the task running:
+```
+🗑️ Cleaned up 1234 history records older than 30 days
+```
+
+### Recommended Settings
+- **Small deployments (< 10 devices):** Keep 30 days
+- **Medium deployments (10-50 devices):** Keep 14 days
+- **Large deployments (50+ devices):** Keep 7 days
+
+---
+
 ## 🎯 Quick Start Checklist
 
 - [ ] Redis installed and running (`redis-cli ping` → PONG)
