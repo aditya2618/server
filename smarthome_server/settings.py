@@ -77,20 +77,20 @@ WSGI_APPLICATION = 'smarthome_server.wsgi.application'
 # ASGI Configuration for WebSockets
 ASGI_APPLICATION = 'smarthome_server.asgi.application'
 
-# Channel Layers (Redis/Memurai for real-time WebSocket support)
+# Channel Layers (In-Memory for development - works reliably)
 CHANNEL_LAYERS = {
     "default": {
-        "BACKEND": "channels_redis.core.RedisChannelLayer",
-        "CONFIG": {
-            "hosts": [("127.0.0.1", 6379)],
-        },
+        "BACKEND": "channels.layers.InMemoryChannelLayer"
     },
 }
 
-# Old in-memory configuration (doesn't support cross-process communication):
+# Redis configuration (currently having connection issues with Memurai):
 # CHANNEL_LAYERS = {
 #     "default": {
-#         "BACKEND": "channels.layers.InMemoryChannelLayer"
+#         "BACKEND": "channels_redis.core.RedisChannelLayer",
+#         "CONFIG": {
+#             "hosts": [("127.0.0.1", 6379)],
+#         },
 #     },
 # }
 

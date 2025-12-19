@@ -110,19 +110,18 @@ def handle_state_message(topic, payload):
 
         # Get home_id for WebSocket group
         if device.home:
-            home_id = device.home.id
+            home_identifier = str(device.home.id)
+        elif device.home_identifier:
+            # Use string home_identifier directly
+            home_identifier = str(device.home_identifier)
         else:
-            # Try to get home from HomeMember or parse home_identifier
-            try:
-                home_id = int(device.home_identifier)
-            except (ValueError, TypeError):
-                # If home_identifier is not numeric, skip WebSocket broadcast
-                print(f"⚠️ Cannot broadcast: device has no home and home_identifier is not numeric")
-                return
+            # No home identifier available, skip broadcast
+            print(f"⚠️ Cannot broadcast: device has no home_identifier")
+            return
 
         channel_layer = get_channel_layer()
         async_to_sync(channel_layer.group_send)(
-            f"home_{home_id}",
+            f"home_{home_identifier}",
             {
                 "type": "send_state_update",
                 "data": {
@@ -181,19 +180,18 @@ def handle_status_message(topic, payload):
 
         # Get home_id for WebSocket group
         if device.home:
-            home_id = device.home.id
+            home_identifier = str(device.home.id)
+        elif device.home_identifier:
+            # Use string home_identifier directly
+            home_identifier = str(device.home_identifier)
         else:
-            # Try to parse home_identifier as integer
-            try:
-                home_id = int(device.home_identifier)
-            except (ValueError, TypeError):
-                # If home_identifier is not numeric, skip WebSocket broadcast
-                print(f"⚠️ Cannot broadcast: device has no home and home_identifier is not numeric")
-                return
+            # No home identifier available, skip broadcast
+            print(f"⚠️ Cannot broadcast: device has no home_identifier")
+            return
 
         channel_layer = get_channel_layer()
         async_to_sync(channel_layer.group_send)(
-            f"home_{home_id}",
+            f"home_{home_identifier}",
             {
                 "type": "send_state_update",
                 "data": {

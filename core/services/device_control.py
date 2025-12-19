@@ -15,4 +15,7 @@ def control_entity(entity, value):
         control_entity(rgb_light, {"state": "ON", "r": 255, "g": 100, "b": 50})
     """
     topic = entity.command_topic()
+    print(f"🔵 control_entity called: entity_id={entity.id}, name={entity.name}, topic={topic}, value={value}")
     publish_command(topic, value)
+    print(f"🔵 publish_command completed for entity {entity.id}")
+

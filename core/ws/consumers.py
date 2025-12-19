@@ -16,9 +16,52 @@ class HomeConsumer(AsyncJsonWebsocketConsumer):
         """
         Called when WebSocket connection is established.
         
-        Extracts home_id from URL, joins the home's channel group,
+        Authenticates user via token in query string,
+        extracts home_id from URL, joins the home's channel group,
         and accepts the connection.
         """
+        print("=== WebSocket connect() called ===")
+        
+        # Get token from query string
+        from channels.db import database_sync_to_async
+        from rest_framework.authtoken.models import Token
+        from django.contrib.auth.models import AnonymousUser
+        
+        query_string = self.scope.get("query_string", b"").decode()
+        token_key = None
+        
+        print(f"Query string: {query_string}")
+        
+        # Parse token from query string
+        for param in query_string.split("&"):
+            if param.startswith("token="):
+                token_key = param.split("=")[1]
+                break
+        
+        # Authenticate user
+        if token_key:
+            try:
+                @database_sync_to_async
+                def get_user_from_token(key):
+                    token = Token.objects.get(key=key)
+                    return token.user
+                
+                user = await get_user_from_token(token_key)
+                self.scope["user"] = user
+            except Token.DoesNotExist:
+                print(f"✗ WebSocket auth failed: Invalid token")
+                await self.close()
+                return
+            except Exception as e:
+                print(f"✗ WebSocket auth error: {e}")
+                await self.close()
+                return
+        else:
+            print(f"✗ WebSocket auth failed: No token provided")
+            await self.close()
+            return
+        
+        # Get home_id from URL
         self.home_id = self.scope["url_route"]["kwargs"]["home_id"]
         self.group_name = f"home_{self.home_id}"
 
@@ -29,7 +72,7 @@ class HomeConsumer(AsyncJsonWebsocketConsumer):
         )
 
         await self.accept()
-        print(f"✓ WebSocket connected: home_{self.home_id}")
+        print(f"✓ WebSocket connected: home_{self.home_id} (user: {self.scope['user'].username})")
 
     async def disconnect(self, close_code):
         """
