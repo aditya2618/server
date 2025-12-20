@@ -104,6 +104,38 @@ def handle_state_message(topic, payload):
 
         print(f"✓ Updated {entity_type}/{entity_name} on {node_name}: {value}")
         
+        # AUTOMATION: Check for triggered automations
+        print(f"🤖 AUTOMATION CHECK: entity_id={entity.id}, value={value}")
+        try:
+            from core.automation_executor import check_automations_for_entity
+            
+            # Determine attribute name for automation checking
+            # For sensors like "room_temp_and_humidity_temperature", extract "temperature"
+            # For switches/lights, use "state"
+            if entity_type == 'sensor' and '_' in entity_name:
+                # Extract attribute from sensor name (last part)
+                # e.g., "room_temp_and_humidity_temperature" -> "temperature"
+                attribute_name = entity_name.split('_')[-1]
+            else:
+                attribute_name = 'state'
+            
+            # Extract value
+            if isinstance(value, dict):
+                # For complex values, check each attribute
+                for attr_key, attr_value in value.items():
+                    print(f"  → Checking automation for {attr_key}={attr_value}")
+                    check_automations_for_entity(entity.id, attr_key, attr_value)
+            else:
+                # For simple values, use determined attribute name
+                print(f"  → Checking automation for {attribute_name}={value}")
+                check_automations_for_entity(entity.id, attribute_name, value)
+            
+            print(f"  ✓ Automation check complete")
+        except Exception as e:
+            print(f"⚠️  ERROR in automation checking: {e}")
+            import traceback
+            traceback.print_exc()
+        
         # Push state update to WebSocket clients
         from asgiref.sync import async_to_sync
         from channels.layers import get_channel_layer
@@ -133,13 +165,11 @@ def handle_state_message(topic, payload):
                 }
             }
         )
-        
-        # Trigger automation evaluation
-        from core.tasks import evaluate_automations
-        evaluate_automations.delay(entity.id)
 
     except Exception as e:
         print(f"✗ Error handling message: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 def handle_status_message(topic, payload):

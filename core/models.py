@@ -226,6 +226,31 @@ class AutomationAction(models.Model):
         return f"Control {self.entity.name}: {self.command}"
 
 
+class AutomationExecution(models.Model):
+    """Track automation execution history for monitoring and debugging"""
+    automation = models.ForeignKey(
+        Automation, on_delete=models.CASCADE, related_name="executions"
+    )
+    executed_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    success = models.BooleanField(default=True)
+    error_message = models.TextField(blank=True)
+    trigger_entity = models.ForeignKey(
+        Entity, on_delete=models.SET_NULL, null=True, blank=True
+    )
+    trigger_value = models.CharField(max_length=255, blank=True)
+    
+    class Meta:
+        ordering = ['-executed_at']
+        indexes = [
+            models.Index(fields=['-executed_at']),
+            models.Index(fields=['automation', '-executed_at']),
+        ]
+    
+    def __str__(self):
+        status = "✓" if self.success else "✗"
+        return f"{status} {self.automation.name} at {self.executed_at}"
+
+
 # 8. Scenes
 class Scene(models.Model):
     home = models.ForeignKey(Home, on_delete=models.CASCADE)

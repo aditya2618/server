@@ -1,5 +1,32 @@
 from celery import shared_task
 from core.models import Automation, AutomationTrigger, AutomationAction
+import json
+
+
+def control_entity(entity, command):
+    """
+    Publish MQTT command to control an entity.
+    
+    Args:
+        entity: Entity model instance
+        command: Dict with command payload (e.g., {"power": true, "brightness": 80})
+    """
+    from core.mqtt.client import mqtt_client
+    
+    try:
+        topic = entity.command_topic()
+        payload = json.dumps(command)
+        
+        # Publish to MQTT
+        mqtt_client.publish(topic, payload)
+        print(f"📤 Published: {topic} -> {payload}")
+        
+        # Update entity state optimistically
+        entity.state.update(command)
+        entity.save(update_fields=['state'])
+        
+    except Exception as e:
+        print(f"❌ Error controlling entity {entity.name}: {e}")
 
 
 @shared_task

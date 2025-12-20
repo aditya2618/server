@@ -2,13 +2,12 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
-from core.models import Scene, SceneAction, Home, HomeMember
-from core.api.serializers import SceneSerializer
-from core.tasks import run_scene
+from core.models import Automation, AutomationTrigger, AutomationAction, Home, HomeMember
+from core.api.serializers import AutomationSerializer
 
 
-class SceneListView(APIView):
-    """List all scenes in a home (only if user has access to that home)."""
+class AutomationListView(APIView):
+    """List all automations in a home or create a new automation."""
     permission_classes = [IsAuthenticated]
 
     def get(self, request, home_id):
@@ -24,11 +23,15 @@ class SceneListView(APIView):
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        scenes = Scene.objects.filter(home_id=home_id).prefetch_related('actions__entity')
-        return Response(SceneSerializer(scenes, many=True).data)
+        automations = Automation.objects.filter(home_id=home_id).prefetch_related(
+            'triggers__entity',
+            'actions__entity',
+            'actions__scene'
+        )
+        return Response(AutomationSerializer(automations, many=True).data)
     
     def post(self, request, home_id):
-        """Create a new scene"""
+        """Create a new automation"""
         # Verify user has access to this home
         try:
             home = Home.objects.get(
@@ -45,125 +48,128 @@ class SceneListView(APIView):
         data = request.data.copy()
         data['home'] = home_id
         
-        serializer = SceneSerializer(data=data)
+        serializer = AutomationSerializer(data=data)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-class SceneDetailView(APIView):
-    """Get, update, or delete a specific scene."""
+class AutomationDetailView(APIView):
+    """Get, update, or delete a specific automation."""
     permission_classes = [IsAuthenticated]
     
-    def get(self, request, scene_id):
+    def get(self, request, automation_id):
         try:
-            scene = Scene.objects.select_related('home').prefetch_related(
-                'actions__entity'
-            ).get(id=scene_id)
+            automation = Automation.objects.select_related('home').prefetch_related(
+                'triggers__entity',
+                'actions__entity',
+                'actions__scene'
+            ).get(id=automation_id)
             
             # Verify user has access
             if not HomeMember.objects.filter(
-                home=scene.home,
+                home=automation.home,
                 user=request.user
             ).exists():
                 return Response(
-                    {'error': 'You do not have access to this scene'},
+                    {'error': 'You do not have access to this automation'},
                     status=status.HTTP_403_FORBIDDEN
                 )
             
-            return Response(SceneSerializer(scene).data)
+            return Response(AutomationSerializer(automation).data)
             
-        except Scene.DoesNotExist:
+        except Automation.DoesNotExist:
             return Response(
-                {"error": "Scene not found"},
+                {"error": "Automation not found"},
                 status=status.HTTP_404_NOT_FOUND
             )
     
-    def put(self, request, scene_id):
-        """Update an existing scene"""
+    def put(self, request, automation_id):
+        """Update an existing automation"""
         try:
-            scene = Scene.objects.select_related('home').get(id=scene_id)
+            automation = Automation.objects.select_related('home').get(id=automation_id)
             
             # Verify user has access
             if not HomeMember.objects.filter(
-                home=scene.home,
+                home=automation.home,
                 user=request.user
             ).exists():
                 return Response(
-                    {'error': 'You do not have access to this scene'},
+                    {'error': 'You do not have access to this automation'},
                     status=status.HTTP_403_FORBIDDEN
                 )
             
-            serializer = SceneSerializer(scene, data=request.data, partial=True)
+            serializer = AutomationSerializer(automation, data=request.data, partial=True)
             if serializer.is_valid():
                 serializer.save()
                 return Response(serializer.data)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
             
-        except Scene.DoesNotExist:
+        except Automation.DoesNotExist:
             return Response(
-                {"error": "Scene not found"},
+                {"error": "Automation not found"},
                 status=status.HTTP_404_NOT_FOUND
             )
     
-    def delete(self, request, scene_id):
-        """Delete a scene"""
+    def delete(self, request, automation_id):
+        """Delete an automation"""
         try:
-            scene = Scene.objects.select_related('home').get(id=scene_id)
+            automation = Automation.objects.select_related('home').get(id=automation_id)
             
             # Verify user has access
             if not HomeMember.objects.filter(
-                home=scene.home,
+                home=automation.home,
                 user=request.user
             ).exists():
                 return Response(
-                    {'error': 'You do not have access to this scene'},
+                    {'error': 'You do not have access to this automation'},
                     status=status.HTTP_403_FORBIDDEN
                 )
             
-            scene.delete()
+            automation.delete()
             return Response(
-                {'message': 'Scene deleted successfully'},
-                status=status.HTTP_200_OK
+                {'status': 'success', 'message': 'Automation deleted successfully'},
+                status=status.HTTP_204_NO_CONTENT
             )
             
-        except Scene.DoesNotExist:
+        except Automation.DoesNotExist:
             return Response(
-                {"error": "Scene not found"},
+                {"error": "Automation not found"},
                 status=status.HTTP_404_NOT_FOUND
             )
 
 
-class RunSceneView(APIView):
-    """Trigger scene execution asynchronously (only if user has access to the scene's home)."""
+class AutomationToggleView(APIView):
+    """Toggle automation enabled/disabled status."""
     permission_classes = [IsAuthenticated]
-
-    def post(self, request, scene_id):
+    
+    def post(self, request, automation_id):
         try:
-            scene = Scene.objects.select_related('home').get(id=scene_id)
+            automation = Automation.objects.select_related('home').get(id=automation_id)
             
-            # Verify user has access to this scene's home
+            # Verify user has access
             if not HomeMember.objects.filter(
-                home=scene.home,
+                home=automation.home,
                 user=request.user
             ).exists():
                 return Response(
-                    {'error': 'You do not have access to this scene'},
+                    {'error': 'You do not have access to this automation'},
                     status=status.HTTP_403_FORBIDDEN
                 )
             
-            # Execute scene asynchronously via Celery
-            run_scene.delay(scene.id)
+            # Toggle enabled status
+            automation.enabled = not automation.enabled
+            automation.save(update_fields=['enabled'])
             
             return Response({
-                "status": "scene_started",
-                "scene_id": scene_id,
-                "scene_name": scene.name
+                'status': 'success',
+                'automation_id': automation_id,
+                'enabled': automation.enabled
             })
             
-        except Scene.DoesNotExist:
+        except Automation.DoesNotExist:
             return Response(
-                {"error": "Scene not found"},
+                {"error": "Automation not found"},
                 status=status.HTTP_404_NOT_FOUND
             )

@@ -65,10 +65,19 @@ def publish_command(topic: str, payload):
             payload = payload['value']
         elif 'power' in payload and len(payload) == 1:
             # {"power": "ON"} -> "ON"
-            payload = payload['power']
+            path_val = payload['power']
+            # Handle boolean conversion
+            if isinstance(path_val, bool):
+                payload = "ON" if path_val else "OFF"
+            else:
+                payload = path_val
         elif 'state' in payload and len(payload) == 1:
             # {"state": "ON"} -> "ON"
-            payload = payload['state']
+            path_val = payload['state']
+            if isinstance(path_val, bool):
+                payload = "ON" if path_val else "OFF"
+            else:
+                payload = path_val
         else:
             # For complex commands (brightness, RGB, etc.), send as JSON
             # ESPHome light component expects JSON format for complex commands
