@@ -187,6 +187,19 @@ class Automation(models.Model):
     home = models.ForeignKey(Home, on_delete=models.CASCADE)
     name = models.CharField(max_length=100)
     enabled = models.BooleanField(default=True)
+    
+    # Advanced automation features
+    trigger_logic = models.CharField(
+        max_length=3,
+        choices=[('AND', 'All conditions must match'), ('OR', 'Any condition matches')],
+        default='AND',
+        help_text='How to combine multiple triggers'
+    )
+    cooldown_seconds = models.IntegerField(
+        default=60,
+        help_text='Minimum seconds between executions (prevents rapid re-triggering)'
+    )
+    
     created_at = models.DateTimeField(auto_now_add=True)
 
 
@@ -218,6 +231,12 @@ class AutomationAction(models.Model):
     command = models.JSONField(
         blank=True, null=True,
         help_text="e.g. {state:'ON'} or {brightness:80}"
+    )
+    
+    # Action delay feature
+    delay_seconds = models.IntegerField(
+        default=0,
+        help_text='Delay before executing this action (in seconds)'
     )
 
     def __str__(self):
@@ -255,6 +274,7 @@ class AutomationExecution(models.Model):
 class Scene(models.Model):
     home = models.ForeignKey(Home, on_delete=models.CASCADE)
     name = models.CharField(max_length=100)
+    created_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='scenes', null=True, blank=True)
 
 
 class SceneAction(models.Model):
@@ -304,6 +324,7 @@ class Firmware(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
 
+
 class OTAUpdate(models.Model):
     device = models.ForeignKey(Device, on_delete=models.CASCADE)
     firmware = models.ForeignKey(Firmware, on_delete=models.SET_NULL, null=True)
@@ -313,3 +334,88 @@ class OTAUpdate(models.Model):
         default="pending"
     )
     updated_at = models.DateTimeField(auto_now=True)
+
+
+# ============================================================================
+# ENERGY MONITORING MODELS
+# ============================================================================
+
+class DevicePowerProfile(models.Model):
+    """Store average power consumption for different device types"""
+    entity_type = models.CharField(max_length=50, unique=True)
+    average_watts = models.DecimalField(max_digits=10, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = "Device Power Profile"
+        verbose_name_plural = "Device Power Profiles"
+    
+    def __str__(self):
+        return f"{self.entity_type}: {self.average_watts}W"
+
+
+class EnergyLog(models.Model):
+    """Track daily energy consumption per entity"""
+    entity = models.ForeignKey(Entity, on_delete=models.CASCADE, related_name='energy_logs')
+    date = models.DateField()
+    on_duration_seconds = models.IntegerField(default=0, help_text="Total seconds device was on")
+    estimated_kwh = models.DecimalField(max_digits=10, decimal_places=4, default=0)
+    estimated_cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ['entity', 'date']
+        ordering = ['-date']
+        verbose_name = "Energy Log"
+        verbose_name_plural = "Energy Logs"
+        indexes = [
+            models.Index(fields=['entity', 'date']),
+            models.Index(fields=['date']),
+        ]
+    
+    def __str__(self):
+        return f"{self.entity.name} - {self.date}: {self.estimated_kwh} kWh"
+    
+    @staticmethod
+    def calculate_energy(entity, duration_seconds):
+        """Calculate energy consumption in kWh"""
+        try:
+            profile = DevicePowerProfile.objects.get(entity_type=entity.entity_type)
+            watts = float(profile.average_watts)
+        except DevicePowerProfile.DoesNotExist:
+            # Default power consumption if no profile exists
+            default_watts = {
+                'light': 15,
+                'fan': 75,
+                'switch': 10,
+            }
+            watts = default_watts.get(entity.entity_type, 10)
+        
+        # Convert to kWh: (watts * hours) / 1000
+        hours = duration_seconds / 3600
+        kwh = (watts * hours) / 1000
+        
+        return kwh
+
+
+class UserEnergySettings(models.Model):
+    """Store user preferences for energy monitoring"""
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='energy_settings')
+    electricity_rate_per_kwh = models.DecimalField(
+        max_digits=6, 
+        decimal_places=2, 
+        default=8.00,
+        help_text="Cost per kWh in user's currency"
+    )
+    currency = models.CharField(max_length=3, default='INR')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = "User Energy Settings"
+        verbose_name_plural = "User Energy Settings"
+    
+    def __str__(self):
+        return f"{self.user.username}: {self.electricity_rate_per_kwh} {self.currency}/kWh"

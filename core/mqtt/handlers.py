@@ -78,6 +78,9 @@ def handle_state_message(topic, payload):
             entity.save(update_fields=["capabilities"])
             print(f"🆕 Auto-created entity: {entity_type}/{entity_name} with capabilities: {entity.capabilities}")
 
+        # Store old state for energy tracking
+        old_state = entity.state.copy() if entity.state else {}
+        
         # Update entity state
         entity.state = value if isinstance(value, dict) else {"value": value}
         entity.save(update_fields=["state"])
@@ -87,6 +90,13 @@ def handle_state_message(topic, payload):
             entity=entity,
             value=entity.state
         )
+        
+        # Track energy consumption (if device turned off)
+        try:
+            from core.services.energy_tracker import EnergyTracker
+            EnergyTracker.track_state_change(entity, old_state, entity.state)
+        except Exception as e:
+            print(f"⚠️ Energy tracking error: {e}")
 
         # Multi-value attributes (optional)
         if isinstance(value, dict):

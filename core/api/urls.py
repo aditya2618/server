@@ -1,5 +1,5 @@
 from django.urls import path
-from core.api import auth, views, scenes, automations, control
+from core.api import auth, views, scenes, automations, control, energy
 
 urlpatterns = [
     # Authentication
@@ -31,4 +31,9 @@ urlpatterns = [
     path("homes/<int:home_id>/automations/", automations.AutomationListView.as_view(), name="automation_list"),
     path("automations/<int:automation_id>/", automations.AutomationDetailView.as_view(), name="automation_detail"),
     path("automations/<int:automation_id>/toggle/", automations.AutomationToggleView.as_view(), name="automation_toggle"),
+    
+    # Energy Monitoring
+    path("energy/", energy.EnergyViewSet.as_view({'get': 'list'}), name="energy_today"),
+    path("energy/history/", energy.EnergyViewSet.as_view({'get': 'history'}), name="energy_history"),
+    path("energy/settings/", energy.EnergyViewSet.as_view({'get': 'settings', 'put': 'settings'}), name="energy_settings"),
 ]

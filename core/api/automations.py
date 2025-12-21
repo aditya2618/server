@@ -128,10 +128,8 @@ class AutomationDetailView(APIView):
                 )
             
             automation.delete()
-            return Response(
-                {'status': 'success', 'message': 'Automation deleted successfully'},
-                status=status.HTTP_204_NO_CONTENT
-            )
+            # 204 NO_CONTENT should not have a response body
+            return Response(status=status.HTTP_204_NO_CONTENT)
             
         except Automation.DoesNotExist:
             return Response(

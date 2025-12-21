@@ -24,7 +24,11 @@ class SceneListView(APIView):
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        scenes = Scene.objects.filter(home_id=home_id).prefetch_related('actions__entity')
+        # Filter scenes created by this user only (private scenes)
+        scenes = Scene.objects.filter(
+            home_id=home_id,
+            created_by=request.user
+        ).prefetch_related('actions__entity')
         return Response(SceneSerializer(scenes, many=True).data)
     
     def post(self, request, home_id):
@@ -47,7 +51,8 @@ class SceneListView(APIView):
         
         serializer = SceneSerializer(data=data)
         if serializer.is_valid():
-            serializer.save()
+            # Set created_by to current user
+            serializer.save(created_by=request.user)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

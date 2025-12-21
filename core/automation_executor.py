@@ -5,6 +5,7 @@ Handles trigger evaluation, action execution, cooldown management,
 rate limiting, and comprehensive error handling.
 """
 import logging
+import threading
 from typing import Optional, Dict, Any
 from django.core.cache import cache
 from django.db import transaction
@@ -161,7 +162,7 @@ class AutomationExecutor:
     @classmethod
     def execute_automation(cls, automation: Automation, trigger_entity_id: int, trigger_value: Any) -> bool:
         """
-        Execute all actions in an automation with error handling.
+        Execute all actions in an automation with error handling and delays.
         
         Args:
             automation: Automation instance to execute
@@ -181,18 +182,24 @@ class AutomationExecutor:
             for i, action in enumerate(actions, 1):
                 try:
                     action_desc = cls._get_action_description(action)
-                    logger.info(f"  ↳ Action {i}/{len(actions)}: {action_desc}")
                     
-                    if action.entity:
-                        success = cls.execute_device_action(action)
-                    elif action.scene:
-                        success = cls.execute_scene_action(action)
+                    if action.delay_seconds > 0:
+                        # Schedule delayed execution
+                        print(f"  ⏰ Scheduling action {i}/{len(actions)}: {action_desc} (in {action.delay_seconds}s)")
+                        timer = threading.Timer(
+                            action.delay_seconds,
+                            cls._execute_single_action,
+                            args=[action, automation.name]
+                        )
+                        timer.daemon = True
+                        timer.start()
                     else:
-                        logger.warning(f"  ⚠️  Action {i} has no entity or scene")
-                        success = False
-                    
-                    if not success:
-                        all_success = False
+                        # Execute immediately
+                        logger.info(f"  ↳ Action {i}/{len(actions)}: {action_desc}")
+                        success = cls._execute_single_action(action, automation.name)
+                        
+                        if not success:
+                            all_success = False
                         
                 except Exception as e:
                     logger.error(f"  ❌ Action {i} failed: {e}")
@@ -210,6 +217,30 @@ class AutomationExecutor:
         except Exception as e:
             logger.error(f"❌ [FAILED] Automation {automation.name}: {e}")
             cls._record_execution(automation, trigger_entity_id, trigger_value, False, str(e))
+            return False
+    
+    @staticmethod
+    def _execute_single_action(action: AutomationAction, automation_name: str = "Unknown") -> bool:
+        """
+        Execute a single action (device or scene).
+        
+        Args:
+            action: AutomationAction instance
+            automation_name: Name of the automation (for logging)
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            if action.entity:
+                return AutomationExecutor.execute_device_action(action)
+            elif action.scene:
+                return AutomationExecutor.execute_scene_action(action)
+            else:
+                print(f"  ⚠️  Action has no entity or scene")
+                return False
+        except Exception as e:
+            print(f"  ❌ Delayed action failed for {automation_name}: {e}")
             return False
     
     @staticmethod
@@ -314,8 +345,8 @@ class AutomationExecutor:
                         print(f"    ⚠️  Rate limited: {automation.name}")
                         continue
                     
-                    # Check cooldown
-                    if not cls.should_execute_automation(automation.id):
+                    # Check cooldown using automation's own cooldown setting
+                    if not cls.should_execute_automation(automation.id, automation.cooldown_seconds):
                         print(f"    ⏳ In cooldown: {automation.name}")
                         continue
                     
@@ -341,10 +372,7 @@ class AutomationExecutor:
     def _check_all_triggers(cls, automation: Automation, entity_id: int, 
                            attribute: str, new_value: Any) -> bool:
         """
-        Check if ALL triggers match (AND logic).
-        
-        For now, we implement AND logic - all triggers must match.
-        Future: Could add OR logic or more complex conditions.
+        Check if triggers match using AND or OR logic.
         
         Args:
             automation: Automation to check
@@ -353,33 +381,41 @@ class AutomationExecutor:
             new_value: New value
             
         Returns:
-            bool: True if all triggers match
+            bool: True if triggers match (based on AND/OR logic)
         """
         triggers = automation.triggers.all()
+        results = []
         
         for trigger in triggers:
             # For the entity that changed, use new_value
             if trigger.entity_id == entity_id and trigger.attribute == attribute:
-                if not cls.evaluate_trigger(trigger, new_value):
-                    return False
+                result = cls.evaluate_trigger(trigger, new_value)
+                results.append(result)
             else:
                 # For other triggers, get current value from database
                 try:
                     entity = Entity.objects.get(id=trigger.entity_id)
-                    current_value = entity.current_state.get('value') if entity.current_state else None
+                    current_value = entity.state.get('value') if entity.state else None
                     
                     if current_value is None:
                         logger.warning(f"No current state for entity {trigger.entity_id}")
-                        return False
+                        results.append(False)
+                        continue
                     
-                    if not cls.evaluate_trigger(trigger, current_value):
-                        return False
+                    result = cls.evaluate_trigger(trigger, current_value)
+                    results.append(result)
                         
                 except Entity.DoesNotExist:
                     logger.error(f"Entity {trigger.entity_id} not found")
-                    return False
+                    results.append(False)
         
-        return True
+        # Apply AND or OR logic based on automation's trigger_logic setting
+        if automation.trigger_logic == 'OR':
+            # OR logic: at least one trigger must match
+            return any(results) if results else False
+        else:
+            # AND logic (default): all triggers must match
+            return all(results) if results else False
 
 
 # Convenience function for external use

@@ -136,7 +136,7 @@ class AutomationActionSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = AutomationAction
-        fields = ['id', 'entity', 'entity_name', 'scene', 'scene_name', 'command']
+        fields = ['id', 'entity', 'entity_name', 'scene', 'scene_name', 'command', 'delay_seconds']
 
 
 class AutomationSerializer(serializers.ModelSerializer):
@@ -147,7 +147,11 @@ class AutomationSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Automation
-        fields = ['id', 'home', 'name', 'enabled', 'triggers', 'actions', 'triggers_data', 'actions_data']
+        fields = [
+            'id', 'home', 'name', 'enabled',
+            'trigger_logic', 'cooldown_seconds',  # New fields
+            'triggers', 'actions', 'triggers_data', 'actions_data'
+        ]
         read_only_fields = ['id']
     
     def create(self, validated_data):
