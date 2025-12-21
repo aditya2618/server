@@ -11,7 +11,7 @@ def control_entity(entity, command):
         entity: Entity model instance
         command: Dict with command payload (e.g., {"power": true, "brightness": 80})
     """
-    from core.mqtt.client import mqtt_client
+    from core.mqtt.client import client as mqtt_client
     
     try:
         topic = entity.command_topic()
