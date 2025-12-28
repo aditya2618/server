@@ -148,9 +148,23 @@ async def connect_to_cloud():
                         # Publish to MQTT (using paho-mqtt)
                         print(f"📤 Publishing to {topic}: {payload}")
                         
+                        # Convert payload to ESPHome-compatible format
+                        # ESPHome switches expect simple strings "ON"/"OFF", not JSON
+                        mqtt_payload = payload
+                        if isinstance(payload, dict):
+                            if 'power' in payload and len(payload) == 1:
+                                # {'power': True} -> "ON"
+                                mqtt_payload = "ON" if payload['power'] else "OFF"
+                            elif 'value' in payload and len(payload) == 1:
+                                # {'value': 'ON'} -> "ON"
+                                mqtt_payload = payload['value']
+                            else:
+                                # Complex commands (brightness, RGB, etc.) stay as JSON
+                                mqtt_payload = json.dumps(payload)
+                        
                         # Use simple single-shot publish since we don't have a persistent client in this script context easily accessible
                         # Note: Ideally we should use the same persistent client if possible, but for now this works
-                        mqtt_publish.single(topic, json.dumps(payload), hostname="127.0.0.1")
+                        mqtt_publish.single(topic, mqtt_payload, hostname="127.0.0.1")
                         
                         print("✅ Command published to MQTT")
                         
