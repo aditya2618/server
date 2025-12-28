@@ -127,10 +127,21 @@ async def connect_to_cloud():
                         # Construct payload - handle both formats (turn_on/turn_off or ON/OFF)
                         payload = {}
                         cmd_upper = command.upper()
+                        
                         if cmd_upper in ['ON', 'TURN_ON']:
                             payload = {'power': True}
                         elif cmd_upper in ['OFF', 'TURN_OFF']:
                             payload = {'power': False}
+                        elif cmd_upper == 'VALUE' and value:
+                            # Mobile app sends command:'value' with value:'ON'/'OFF'
+                            val_upper = str(value).upper()
+                            if val_upper == 'ON':
+                                payload = {'power': True}
+                            elif val_upper == 'OFF':
+                                payload = {'power': False}
+                            else:
+                                # Numeric value for dimmers, etc.
+                                payload = {'value': value}
                         elif cmd_upper in ['SET_VALUE']:
                             payload = {'value': value}
                         
