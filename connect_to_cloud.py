@@ -8,6 +8,7 @@ import json
 import os
 import django
 from asgiref.sync import sync_to_async
+import paho.mqtt.publish as mqtt_publish
 
 # Setup Django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'smarthome_server.settings')
@@ -96,6 +97,7 @@ async def connect_to_cloud():
                 
                 elif msg_type == 'control_entity':
                     # Handle remote control command
+                    print(f"🔍 DEBUG: Full message data: {data}")  # DEBUG
                     entity_id = data.get('entity_id')
                     command = data.get('command')
                     value = data.get('value')
@@ -133,13 +135,11 @@ async def connect_to_cloud():
                             payload = {'value': value}
                         
                         # Publish to MQTT (using paho-mqtt)
-                        import paho.mqtt.publish as publish
-                        
                         print(f"📤 Publishing to {topic}: {payload}")
                         
                         # Use simple single-shot publish since we don't have a persistent client in this script context easily accessible
                         # Note: Ideally we should use the same persistent client if possible, but for now this works
-                        publish.single(topic, json.dumps(payload), hostname="127.0.0.1")
+                        mqtt_publish.single(topic, json.dumps(payload), hostname="127.0.0.1")
                         
                         print("✅ Command published to MQTT")
                         
