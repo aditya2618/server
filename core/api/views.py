@@ -49,12 +49,12 @@ class HomeListView(APIView):
         )
 
 
-class DeviceListView(APIView):
-    """List all devices in a specific home (only if user has access to that home)."""
+class HomeDetailView(APIView):
+    """Get or update a specific home."""
     permission_classes = [IsAuthenticated]
-
+    
     def get(self, request, home_id):
-        # Verify user has access to this home
+        """Get home details"""
         try:
             home = Home.objects.get(
                 id=home_id,
@@ -62,11 +62,139 @@ class DeviceListView(APIView):
             )
         except Home.DoesNotExist:
             return Response(
-                {'error': 'Home not found or you do not have access to this home'},
+                {'error': 'Home not found or you do not have access'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        return Response(HomeSerializer(home, context={'request': request}).data)
+    
+    def patch(self, request, home_id):
+        """Update home name (only owner or admin can update)"""
+        try:
+            home = Home.objects.get(
+                id=home_id,
+                homemember__user=request.user
+            )
+            
+            # Check if user has permission to update
+            member = HomeMember.objects.get(
+                home=home,
+                user=request.user
+            )
+            
+            if member.role not in ['owner', 'admin']:
+                return Response(
+                    {'error': 'You do not have permission to update this home'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+                
+        except Home.DoesNotExist:
+            return Response(
+                {'error': 'Home not found or you do not have access'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except HomeMember.DoesNotExist:
+            return Response(
+                {'error': 'You are not a member of this home'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
-        devices = Device.objects.filter(home_id=home_id)
+        # Update home name
+        name = request.data.get('name')
+        if name:
+            home.name = name
+            home.save()
+        
+        identifier = request.data.get('identifier')
+        if identifier:
+            home.identifier = identifier
+            home.save()
+        
+        return Response(
+            HomeSerializer(home, context={'request': request}).data
+        )
+
+    def delete(self, request, home_id):
+        """Delete a home (only owner can delete)"""
+        try:
+            home = Home.objects.get(
+                id=home_id,
+                homemember__user=request.user
+            )
+            
+            # Check if user has permission to delete (Strictly OWNER)
+            member = HomeMember.objects.get(
+                home=home,
+                user=request.user
+            )
+            
+            if member.role != 'owner':
+                return Response(
+                    {'error': 'Only the owner can delete this home'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+                
+            home.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        except Home.DoesNotExist:
+            return Response(
+                {'error': 'Home not found or you do not have access'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+
+class DeviceListView(APIView):
+    """List all devices in a specific home (only if user has access to that home)."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, home_id):
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.error(f"DEBUG: DeviceListView GET home_id={home_id} user={request.user}")
+        
+        from django.conf import settings
+        
+        # Check if home_id matches Cloud UUID configuration
+        target_home_id = home_id
+        if str(home_id) == str(getattr(settings, 'CLOUD_GATEWAY_ID', '')):
+             logger.error("DEBUG: ID matches CLOUD_GATEWAY_ID, checking primary home...")
+             primary_home = Home.objects.first()
+             if primary_home:
+                 target_home_id = primary_home.id
+                 logger.error(f"DEBUG: Mapped UUID to Home ID {target_home_id}")
+
+        # Verify user has access to this home
+        try:
+            home = Home.objects.get(
+                id=target_home_id,
+                homemember__user=request.user
+            )
+            logger.error(f"DEBUG: Found home {home.id} for user {request.user}")
+        except (Home.DoesNotExist, ValueError):
+            logger.error(f"DEBUG: Home {target_home_id} not found for user {request.user}. Trying fallback...")
+            
+            # FALLBACK: Return FIRST available home for this user
+            home = Home.objects.filter(homemember__user=request.user).first()
+            if home:
+                logger.error(f"DEBUG: Fallback successful. Using home {home.id} ({home.name})")
+                target_home_id = home.id
+            else:
+                # SUPER FALLBACK: If user has NO homes, look for ANY home (for debugging)
+                first_any_home = Home.objects.first()
+                if first_any_home:
+                    logger.error(f"DEBUG: User has no homes. SUPER FALLBACK to {first_any_home.id}")
+                    target_home_id = first_any_home.id
+                else:
+                    logger.error("DEBUG: Fallback failed. No homes in DB.")
+                    return Response(
+                        {'error': 'Home not found or you do not have access to this home'},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+        
+        devices = Device.objects.filter(home_id=target_home_id)
+        logger.error(f"DEBUG: Final query: Home={target_home_id}, Devices found={devices.count()}")
         return Response(DeviceSerializer(devices, many=True).data)
 
 

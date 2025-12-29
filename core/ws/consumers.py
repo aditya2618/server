@@ -104,4 +104,66 @@ class HomeConsumer(AsyncJsonWebsocketConsumer):
             }
         }
         """
+        print(f"🔔 Consumer received group message: {event}")
         await self.send_json(event["data"])
+        print(f"✅ Sent to WebSocket client: {event['data']}")
+    
+    async def receive_json(self, content):
+        """
+        Receive messages from WebSocket client (from cloud proxy)
+        """
+        msg_type = content.get('type')
+        request_id = content.get('request_id')
+        
+        print(f"📨 Gateway received: {msg_type} (ID: {request_id})")
+        
+        if msg_type == 'get_devices':
+            # Get devices for this home
+            from channels.db import database_sync_to_async
+            from core.models import Device
+            
+            @database_sync_to_async
+            def get_devices_data():
+                devices = Device.objects.filter(home_id=self.home_id).select_related('home')
+                device_list = []
+                for device in devices:
+                    device_data = {
+                        'id': device.id,
+                        'name': device.name,
+                        'identifier': device.identifier,
+                        'is_online': device.is_online,
+                        'last_seen': device.last_seen.isoformat() if device.last_seen else None,
+                        'entities': []
+                    }
+                    
+                    for entity in device.entities.all():
+                        entity_data = {
+                            'id': entity.id,
+                            'name': entity.name,
+                            'identifier': entity.identifier,
+                            'entity_type': entity.entity_type,
+                            'platform': entity.platform,
+                            'state': entity.state,
+                        }
+                        device_data['entities'].append(entity_data)
+                    
+                    device_list.append(device_data)
+                return device_list
+            
+            devices = await get_devices_data()
+            
+            # Send response back to cloud
+            await self.send_json({
+                'type': 'get_devices_response',
+                'request_id': request_id,
+                'devices': devices,
+            })
+            print(f"✅ Sent {len(devices)} devices to cloud")
+    
+    async def proxy_request(self, event):
+        """
+        Handle proxy request from cloud consumer
+        Forwards request from cloud to this local gateway
+        """
+        print(f"🌐 Proxy request: {event}")
+        await self.send_json(event['data'])

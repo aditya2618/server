@@ -1,0 +1,166 @@
+SMART HOME SYSTEM ANALYSIS
+===========================
+
+Created: December 28, 2024
+
+EXECUTIVE SUMMARY
+-----------------
+Deep analysis of Mobile, Server, and Cloud apps to identify bugs, improvements, and new features.
+
+
+============================================================
+CRITICAL BUGS TO FIX
+============================================================
+
+MOBILE APP BUGS:
+----------------
+1. automationStore.ts - Uses wrong 'api' import (should be 'apiClient')
+2. automationStore.ts - Missing '/' prefix in API paths (lines 39, 55, 72, 83)
+3. EnergyDashboardScreen.tsx - Uses 'theme.surface' which doesn't exist
+
+SERVER BUGS:
+------------
+1. No cloud subscription validation (field exists but not enforced)
+2. No rate limiting on entity control (could flood commands)
+3. Using SQLite in production (23MB file, should use PostgreSQL)
+
+CLOUD BUGS:
+-----------
+1. Hardcoded IP in cloudClient.ts (should use config)
+2. No connection timeout handling in gateway consumers
+3. Device offline status not updated on disconnect
+
+
+============================================================
+ARCHITECTURE IMPROVEMENTS NEEDED
+============================================================
+
+1. API CLIENT CONSISTENCY
+   - Currently using 'api', 'apiClient', and require() inconsistently
+   - Standardize all stores to use 'apiClient' import
+
+2. NETWORK MODE NOT PROPAGATED
+   - Stores bypass smartApi routing
+   - Should use smartApi methods for all operations
+
+3. MISSING CLOUD ENDPOINTS
+   - GET /homes/{id}/automations/ - Not available in cloud
+   - GET /homes/{id}/scenes/ - Not available in cloud
+   - POST /homes/{id}/automations/ - Can't create remotely
+   - POST /homes/{id}/scenes/ - Can't create remotely
+
+
+============================================================
+WHAT WORKS IN EACH MODE
+============================================================
+
+FEATURE              | LOCAL | CLOUD
+-------------------------------------------
+View Devices         |  YES  |  YES
+Control Entities     |  YES  |  YES
+Run Scenes           |  YES  |  YES
+View Scenes          |  YES  |  NO (Gap!)
+Create Scenes        |  YES  |  NO (Gap!)
+View Automations     |  YES  |  NO (Gap!)
+Create Automations   |  YES  |  NO (Gap!)
+Real-time Updates    |  YES  |  YES
+Device History       |  YES  |  NO (Gap!)
+
+
+============================================================
+NEW CLOUD FEATURES TO IMPLEMENT
+============================================================
+
+QUICK WINS (4-8 hours each):
+-----------------------------
+1. Cloud Scene List/Run
+   - Sync scenes to cloud DB on gateway connect
+   - Allow listing and running scenes remotely
+   - Effort: 4-6 hours
+
+2. Cloud Automation List
+   - Sync automations to cloud DB
+   - Read-only view when remote
+   - Effort: 4-6 hours
+
+3. Push Notifications
+   - Firebase Cloud Messaging
+   - Notify on device changes, automation triggers
+   - Effort: 8-12 hours
+
+
+MEDIUM TERM (12-24 hours each):
+-------------------------------
+4. Cloud Automation Creation
+   - Create automations that sync to gateway
+   - Bi-directional sync
+   - Effort: 16-24 hours
+
+5. Multi-Gateway Support
+   - One user, multiple homes
+   - Switch between homes in cloud mode
+   - Effort: 12-16 hours
+
+6. State History Graphs
+   - Sync historical data
+   - Temperature/power charts
+   - Effort: 16-24 hours
+
+
+LONG TERM (40+ hours):
+----------------------
+7. Voice Control (Google/Alexa)
+8. IFTTT-style Webhooks
+9. Energy Dashboard (Cloud)
+10. Device Sharing with time-limited access
+
+
+============================================================
+PRIORITY ACTION PLAN
+============================================================
+
+WEEK 1: Bug Fixes
+- Fix automationStore.ts API imports
+- Fix theme.surface references
+- Standardize API client usage
+
+WEEK 2: Cloud Scene/Automation Sync
+- Add SyncedScene model to cloud
+- Sync scenes on gateway connect
+- Add REST endpoints for listing
+
+WEEK 3: Push Notifications
+- Firebase Admin SDK in cloud
+- Device token registration
+- Key event notifications
+
+WEEK 4: Multi-Home Support
+- Handle multiple gateways
+- Add home selector in cloud mode
+- Test switching homes
+
+
+============================================================
+FILES REVIEWED
+============================================================
+
+MOBILE (22 screens, 7 stores):
+- src/api/smartClient.ts - Hybrid routing
+- src/api/cloudClient.ts - Cloud auth & control
+- src/store/automationStore.ts - Issues found
+- src/store/homeStore.ts - Clean
+
+SERVER:
+- core/models.py - Home, Device, Entity, Automation
+- core/api/views.py - REST endpoints
+- core/api/control.py - MQTT dispatch
+
+CLOUD:
+- gateways/consumers.py - WebSocket handler
+- homes/models.py - SyncedDevice storage
+- remote_control/views.py - Remote relay
+
+
+===========================
+END OF ANALYSIS REPORT
+===========================

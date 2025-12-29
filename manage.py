@@ -6,6 +6,10 @@ import sys
 
 def main():
     """Run administrative tasks."""
+    # Load environment variables from .env file
+    from dotenv import load_dotenv
+    load_dotenv()
+    
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'smarthome_server.settings')
     try:
         from django.core.management import execute_from_command_line

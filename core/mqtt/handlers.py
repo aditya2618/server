@@ -150,6 +150,8 @@ def handle_state_message(topic, payload):
         from asgiref.sync import async_to_sync
         from channels.layers import get_channel_layer
 
+        print(f"📡 Device: {device.id} Home: {device.home_id} HomeIdentifier: {device.home_identifier}")
+
         # Get home_id for WebSocket group
         if device.home:
             home_identifier = str(device.home.id)
@@ -160,6 +162,8 @@ def handle_state_message(topic, payload):
             # No home identifier available, skip broadcast
             print(f"⚠️ Cannot broadcast: device has no home_identifier")
             return
+
+        print(f"📡 Broadcasting to group: home_{home_identifier}")
 
         channel_layer = get_channel_layer()
         async_to_sync(channel_layer.group_send)(
@@ -175,6 +179,7 @@ def handle_state_message(topic, payload):
                 }
             }
         )
+        print(f"✅ WebSocket broadcast sent for entity {entity.id} in home_{home_identifier}")
 
     except Exception as e:
         print(f"✗ Error handling message: {e}")

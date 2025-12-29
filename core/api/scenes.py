@@ -141,7 +141,7 @@ class SceneDetailView(APIView):
 
 
 class RunSceneView(APIView):
-    """Trigger scene execution asynchronously (only if user has access to the scene's home)."""
+    """Trigger scene execution (synchronous for reliability)."""
     permission_classes = [IsAuthenticated]
 
     def post(self, request, scene_id):
@@ -158,36 +158,24 @@ class RunSceneView(APIView):
                     status=status.HTTP_403_FORBIDDEN
                 )
             
+            # Execute scene synchronously
+            from core.models import SceneAction
+            from core.services.device_control import control_entity
             
-            # Execute scene directly (synchronous)
-            # Previously used Celery which requires a worker
-            try:
-                from core.models import SceneAction
-                from core.tasks import control_entity
-                
-                actions = SceneAction.objects.filter(scene_id=scene.id).order_by("order")
-                
-                print(f"🎬 Running scene '{scene.name}' (ID={scene.id}) with {actions.count()} action(s)")
-                
-                for action in actions:
-                    print(f"  → Action #{action.order}: {action.entity.name} = {action.value}")
-                    control_entity(action.entity, action.value)
-                
-                return Response({
-                    "status": "scene_executed",
-                    "scene_id": scene_id,
-                    "scene_name": scene.name,
-                    "actions_count": actions.count()
-                })
-            except Exception as e:
-                print(f"❌ Error running scene: {e}")
-                import traceback
-                traceback.print_exc()
-                return Response(
-                    {"error": f"Failed to execute scene: {str(e)}"},
-                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
+            actions = SceneAction.objects.filter(scene_id=scene.id).order_by("order")
             
+            print(f"🎬 Running scene '{scene.name}' with {actions.count()} action(s)")
+            
+            for action in actions:
+                print(f"  → Action #{action.order}: {action.entity.name} = {action.value}")
+                control_entity(action.entity, action.value)
+            
+            return Response({
+                "status": "scene_executed",
+                "scene_id": scene_id,
+                "scene_name": scene.name,
+                "actions_count": actions.count()
+            })
 
         except Scene.DoesNotExist:
             return Response(

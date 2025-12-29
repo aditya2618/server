@@ -3,30 +3,63 @@ from core.models import Automation, AutomationTrigger, AutomationAction
 import json
 
 
-def control_entity(entity, command):
+@shared_task(bind=True, max_retries=5)
+def control_entity(self, entity_id, command):
     """
-    Publish MQTT command to control an entity.
+    Publish MQTT command to control an entity (async with retry).
     
     Args:
-        entity: Entity model instance
+        entity_id: Entity ID
         command: Dict with command payload (e.g., {"power": true, "brightness": 80})
     """
     from core.mqtt.client import client as mqtt_client
+    from channels.layers import get_channel_layer
+    from asgiref.sync import async_to_sync
+    from core.models import Entity
     
     try:
+        entity = Entity.objects.select_related('device', 'device__home').get(id=entity_id)
+        
         topic = entity.command_topic()
         payload = json.dumps(command)
         
         # Publish to MQTT
-        mqtt_client.publish(topic, payload)
+        result = mqtt_client.publish(topic, payload)
+        
+        if result.rc != 0:
+            raise Exception(f"MQTT publish failed with code {result.rc}")
+        
         print(f"📤 Published: {topic} -> {payload}")
         
         # Update entity state optimistically
         entity.state.update(command)
         entity.save(update_fields=['state'])
         
+        # Broadcast state change via WebSocket to all connected clients
+        channel_layer = get_channel_layer()
+        home_id = entity.device.home.id
+        
+        async_to_sync(channel_layer.group_send)(
+            f"home_{home_id}",
+            {
+                "type": "send_state_update",
+                "data": {
+                    "type": "entity_state",
+                    "entity_id": entity.id,
+                    "device_id": entity.device.id,
+                    "state": entity.state,
+                    "is_online": entity.device.is_online
+                }
+            }
+        )
+        print(f"📡 WebSocket broadcast sent for entity {entity.id}")
+        
+        return {'status': 'success', 'entity_id': entity_id}
+        
     except Exception as e:
-        print(f"❌ Error controlling entity {entity.name}: {e}")
+        print(f"❌ Error controlling entity {entity_id}: {e}")
+        # Retry with exponential backoff (max 60 seconds)
+        raise self.retry(exc=e, countdown=min(2 ** self.request.retries, 60))
 
 
 @shared_task
@@ -87,38 +120,46 @@ def evaluate_automations(entity_id):
 
 def run_actions(automation):
     """
-    Execute all actions for an automation.
+    Execute all actions for an automation via Celery tasks.
     """
     actions = AutomationAction.objects.filter(automation=automation)
 
     for action in actions:
         if action.scene:
-            # Trigger scene execution
+            # Trigger scene execution (async)
             run_scene.delay(action.scene.id)
-            print(f"  → Triggering scene: {action.scene.name}")
+            print(f"  → Queued scene: {action.scene.name}")
         elif action.entity:
-            # Direct entity control
-            print(f"  → Executing action on {action.entity.name}: {action.command}")
-            control_entity(action.entity, action.command)
+            # Direct entity control (async)
+            print(f"  → Queued entity action: {action.entity.name} = {action.command}")
+            control_entity.delay(action.entity.id, action.command)
 
 
-@shared_task
-def run_scene(scene_id):
+@shared_task(bind=True, max_retries=3)
+def run_scene(self, scene_id):
     """
-    Execute a scene by running all its actions in order.
+    Execute a scene by running all its actions in order via Celery tasks.
     
     Args:
         scene_id: ID of the scene to execute
     """
     from core.models import SceneAction
     
-    actions = SceneAction.objects.filter(scene_id=scene_id).order_by("order")
-    
-    print(f"🎬 Running scene (ID={scene_id}) with {actions.count()} action(s)")
-    
-    for action in actions:
-        print(f"  → Action #{action.order}: {action.entity.name} = {action.value}")
-        control_entity(action.entity, action.value)
+    try:
+        actions = SceneAction.objects.filter(scene_id=scene_id).order_by("order")
+        
+        print(f"🎬 Running scene (ID={scene_id}) with {actions.count()} action(s)")
+        
+        for action in actions:
+            print(f"  → Action #{action.order}: {action.entity.name} = {action.value}")
+            # Queue each entity control as separate async task
+            control_entity.delay(action.entity.id, action.value)
+        
+        return {'status': 'success', 'scene_id': scene_id}
+        
+    except Exception as e:
+        print(f"❌ Scene execution failed: {e}")
+        raise self.retry(exc=e, countdown=2 ** self.request.retries)
 
 
 @shared_task

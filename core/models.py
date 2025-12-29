@@ -9,6 +9,51 @@ class Home(models.Model):
     name = models.CharField(max_length=100)
     owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name="owned_homes")
     created_at = models.DateTimeField(auto_now_add=True)
+    
+    # Location for astronomical calculations (sunrise/sunset)
+    latitude = models.DecimalField(
+        max_digits=9, 
+        decimal_places=6, 
+        null=True, 
+        blank=True,
+        help_text="Latitude for sun calculations"
+    )
+    longitude = models.DecimalField(
+        max_digits=9, 
+        decimal_places=6, 
+        null=True, 
+        blank=True,
+        help_text="Longitude for sun calculations"
+    )
+    timezone = models.CharField(
+        max_length=50, 
+        default='UTC',
+        help_text="Timezone (e.g., 'Asia/Kolkata', 'America/New_York')"
+    )
+    elevation = models.IntegerField(
+        default=0,
+        help_text="Elevation in meters for accurate sun calculations"
+    )
+    
+    # Cloud subscription
+    cloud_enabled = models.BooleanField(
+        default=False,
+        help_text="Whether cloud mode is enabled for this home"
+    )
+    cloud_subscription_tier = models.CharField(
+        max_length=20,
+        choices=[
+            ('free', 'Free - Local Only'),
+            ('basic', 'Basic - Cloud Access'),
+        ],
+        default='free',
+        help_text="Subscription tier for cloud access"
+    )
+    cloud_expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the cloud subscription expires"
+    )
 
     def __str__(self):
         return self.name
@@ -199,23 +244,90 @@ class Automation(models.Model):
         default=60,
         help_text='Minimum seconds between executions (prevents rapid re-triggering)'
     )
-    
     created_at = models.DateTimeField(auto_now_add=True)
 
 
 class AutomationTrigger(models.Model):
+    TRIGGER_TYPES = [
+        ('state', 'Entity State'),
+        ('time', 'Time Schedule'),
+        ('sun', 'Astronomical Event'),
+    ]
+    
+    SUN_EVENTS = [
+        ('sunrise', 'Sunrise'),
+        ('sunset', 'Sunset'),
+        ('dawn', 'Dawn'),
+        ('dusk', 'Dusk'),
+        ('noon', 'Solar Noon'),
+    ]
+    
     automation = models.ForeignKey(
         Automation, on_delete=models.CASCADE, related_name="triggers"
     )
-    entity = models.ForeignKey(Entity, on_delete=models.CASCADE)
+    
+    # Trigger type determines which fields are used
+    trigger_type = models.CharField(
+        max_length=20,
+        choices=TRIGGER_TYPES,
+        default='state',
+        help_text="Type of trigger: state, time, or sun"
+    )
+    
+    # STATE TRIGGER FIELDS (existing)
+    entity = models.ForeignKey(Entity, on_delete=models.CASCADE, null=True, blank=True)
     attribute = models.CharField(
         max_length=50, blank=True,
         help_text="temperature, humidity, state"
     )
     operator = models.CharField(
-        max_length=5, choices=((">", ">"), ("<", "<"), ("==", "=="))
+        max_length=10,
+        choices=[
+            ("==", "Equals"),
+            ("!=", "Not Equals"),
+            (">", "Greater Than"),
+            ("<", "Less Than"),
+            (">=", "Greater or Equal"),
+            ("<=", "Less or Equal"),
+        ],
+        blank=True
     )
-    value = models.CharField(max_length=50)
+    value = models.JSONField(blank=True, null=True)
+    
+    # TIME TRIGGER FIELDS (new)
+    time_of_day = models.TimeField(
+        null=True, 
+        blank=True,
+        help_text="Time to trigger (HH:MM:SS)"
+    )
+    days_of_week = models.JSONField(
+        null=True, 
+        blank=True,
+        help_text="List of days: [0-6] where 0=Monday, 6=Sunday. Empty list = every day"
+    )
+    
+    # SUN TRIGGER FIELDS (new)
+    sun_event = models.CharField(
+        max_length=20,
+        choices=SUN_EVENTS,
+        null=True,
+        blank=True,
+        help_text="Astronomical event to trigger on"
+    )
+    sun_offset = models.IntegerField(
+        default=0,
+        help_text="Offset in minutes (negative = before event, positive = after)"
+    )
+
+    def __str__(self):
+        if self.trigger_type == 'time':
+            days_str = f" on {self.days_of_week}" if self.days_of_week else " daily"
+            return f"Time: {self.time_of_day}{days_str}"
+        elif self.trigger_type == 'sun':
+            offset_str = f" {self.sun_offset:+d}min" if self.sun_offset != 0 else ""
+            return f"Sun: {self.sun_event}{offset_str}"
+        else:
+            return f"{self.entity.name if self.entity else 'Unknown'} {self.operator} {self.value}"
 
 
 class AutomationAction(models.Model):

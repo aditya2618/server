@@ -11,6 +11,10 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -31,7 +35,7 @@ ALLOWED_HOSTS = ['*']
 # Application definition
 
 INSTALLED_APPS = [
-    'daphne',  # Must be first for WebSocket support
+    'daphne',  # MUST be first for WebSocket support in runserver
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -77,14 +81,18 @@ WSGI_APPLICATION = 'smarthome_server.wsgi.application'
 # ASGI Configuration for WebSockets
 ASGI_APPLICATION = 'smarthome_server.asgi.application'
 
-# Channel Layers (In-Memory for development - works reliably)
+# Channel Layers Configuration
+# Use InMemoryChannelLayer for development (when Redis is not available)
+# Use RedisChannelLayer for production (reliable multi-process support)
+
+# InMemoryChannelLayer - For development without Redis
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels.layers.InMemoryChannelLayer"
     },
 }
 
-# Redis configuration (currently having connection issues with Memurai):
+# PRODUCTION: Uncomment below and comment above when Redis is available
 # CHANNEL_LAYERS = {
 #     "default": {
 #         "BACKEND": "channels_redis.core.RedisChannelLayer",
@@ -149,9 +157,19 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Celery Configuration
 CELERY_BROKER_URL = "redis://localhost:6379/0"
+CELERY_RESULT_BACKEND = "redis://localhost:6379/0"
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
+
+
+# Cloud Bridge Configuration (for remote access)
+# Set CLOUD_ENABLED=True to enable cloud connectivity
+CLOUD_ENABLED = os.getenv('CLOUD_ENABLED', 'False').lower() == 'true'
+CLOUD_BRIDGE_URL = os.getenv('CLOUD_BRIDGE_URL', 'ws://localhost:9000/ws/gateway/')
+CLOUD_GATEWAY_ID = os.getenv('CLOUD_GATEWAY_ID', '8c9b2e91-869d-4183-9c8a-db4daccaee14')
+CLOUD_GATEWAY_UUID = os.getenv('CLOUD_GATEWAY_UUID', None)
+CLOUD_GATEWAY_SECRET = os.getenv('CLOUD_GATEWAY_SECRET', 'AUoEkf1FioRRGk62Rm3fxU833eWsLMowzx8GxK803Ps')
 
 # Django REST Framework Configuration
 REST_FRAMEWORK = {

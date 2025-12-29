@@ -7,7 +7,7 @@ from core.services.device_control import control_entity
 
 
 class ControlEntityView(APIView):
-    """Control an entity by sending MQTT commands (only if user has access to the entity's home)."""
+    """Control an entity by sending MQTT commands (synchronous for reliability)."""
     permission_classes = [IsAuthenticated]
 
     def post(self, request, entity_id):
@@ -24,15 +24,15 @@ class ControlEntityView(APIView):
                     status=status.HTTP_403_FORBIDDEN
                 )
             
-            value = request.data  # JSON body from Android
+            command = request.data  # JSON body from mobile app
 
-            # Send MQTT command via service layer
-            control_entity(entity, value)
+            # Send MQTT command synchronously (reliable)
+            control_entity(entity, command)
 
             return Response({
                 "status": "command_sent",
                 "entity_id": entity_id,
-                "command": value
+                "command": command
             })
 
         except Entity.DoesNotExist:
